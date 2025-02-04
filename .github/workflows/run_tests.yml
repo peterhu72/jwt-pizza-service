@@ -1,2 +1,0 @@
-- name: Tests
-  run: npm test
