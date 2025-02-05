@@ -8,7 +8,8 @@ export default [
     languageOptions: {
       globals: {
         ...globals.browser,
-        ...globals.node
+        ...globals.node,
+        ...globals.jest
       }
     }
   },

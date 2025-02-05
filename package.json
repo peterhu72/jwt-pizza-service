@@ -20,6 +20,7 @@
     "@types/jest": "^29.5.14",
     "coverage-badge-creator": "^1.0.19",
     "eslint": "^9.19.0",
+    "eslint-plugin-jest": "^28.11.0",
     "globals": "^15.14.0",
     "jest": "^29.7.0",
     "supertest": "^7.0.0"
