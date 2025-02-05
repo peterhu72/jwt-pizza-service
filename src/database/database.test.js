@@ -91,21 +91,6 @@ describe('Database Service Tests', () => {
     expect(franchises.some(f => f.id === franchise.id)).toBe(false);
   });
 
-  test('Should create and delete a store', async () => {
-    const franchise = await DB.createFranchise({ name: randomName(), admins: [{ email: adminUser.email }] });
-    const store = await DB.createStore(franchise.id, { name: 'Test Store' });
-    expect(store).toHaveProperty('id');
-
-    // Delete the store
-    await DB.deleteStore(franchise.id, store.id);
-
-    // Retrieve the list of stores for the franchise
-    const stores = await DB.getStores(franchise.id);
-
-    // Check if the deleted store no longer exists
-    expect(stores.some(s => s.id === store.id)).toBe(false);
-  });
-
   test('Should hash passwords correctly', async () => {
     const password = 'securepassword';
     const hashedPassword = await bcrypt.hash(password, 10);

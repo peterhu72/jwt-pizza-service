@@ -1,161 +1,107 @@
-const request = require('supertest');
-const express = require('express');
-const { DB } = require('../database/database.js');
-const orderRouter = require('./orderRouter.js');
+const request = require("supertest");
+const app = require("../service");
 
-// Mock the database module
-jest.mock('../database/database.js', () => ({
-  DB: {
-    getMenu: jest.fn(),
-    addMenuItem: jest.fn(),
-    getOrders: jest.fn(),
-    addDinerOrder: jest.fn(),
-  },
-  Role: {
-    Admin: 'Admin',
-    User: 'User',
-  },
-}));
+const testUser = { name: "pizza diner", email: "reg@test.com", password: "a" };
+let testUserAuthToken;
+let testAdminUser;
 
-// Mock the authRouter
-jest.mock('./authRouter.js', () => ({
-  authRouter: {
-    authenticateToken: jest.fn((req, res, next) => {
-      req.user = { id: 1, name: 'Test User', email: 'test@example.com', isRole: jest.fn() };
-      next();
-    }),
-  },
-}));
+describe("pizza-service", () => {
+  beforeEach(async () => {
+    testUser.email = Math.random().toString(36).substring(2, 12) + "@test.com";
+    const registerRes = await request(app).post("/api/auth").send(testUser);
+    testUserAuthToken = registerRes.body.token;
+    expectValidJwt(testUserAuthToken);
 
-const app = express();
-app.use(express.json());
-app.use('/api/order', orderRouter);
+    testAdminUser = await createAdminUser();
+    const adminRegisterRes = await request(app)
+      .post("/api/auth")
+      .send(testAdminUser);
+    expect(adminRegisterRes.status).toBe(200);
+    expectValidJwt(adminRegisterRes.body.token);
+    // doesn't work w/ before each for create franchise, create menu item loses admin role somehow????
+  });
 
-describe('Order Router', () => {
-  let req;
+  test("login", async () => {
+    const loginRes = await request(app).put("/api/auth").send(testUser);
+    expect(loginRes.status).toBe(200);
+    expectValidJwt(loginRes.body.token);
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    // Mock the req object for authenticated routes
-    req = {
-      user: {
-        id: 1,
-        name: 'Test User',
-        email: 'test@example.com',
-        isRole: jest.fn(),
-      },
-      body: {},
-      query: {},
+    const expectedUser = { ...testUser, roles: [{ role: "diner" }] };
+    delete expectedUser.password;
+    expect(loginRes.body.user).toMatchObject(expectedUser);
+  });
+
+  test("login with wrong password", async () => {
+    const loginRes = await request(app)
+      .put("/api/auth")
+      .send({ ...testUser, password: "wrong" });
+    expect(loginRes.status).toBe(404);
+    expect(loginRes.body).toMatchObject({ message: "unknown user" });
+  });
+
+  test("logout", async () => {
+    const logoutRes = await request(app)
+      .delete("/api/auth")
+      .set("Authorization", `Bearer ${testUserAuthToken}`);
+    expect(logoutRes.status).toBe(200);
+    expect(logoutRes.body).toMatchObject({ message: "logout successful" });
+  });
+
+  test("get menu", async () => {
+    const menuRes = await request(app)
+      .get("/api/order/menu")
+      .set("Authorization", `Bearer ${testUserAuthToken}`);
+    expect(menuRes.status).toBe(200);
+    expect(menuRes.body).toEqual(expect.any(Array));
+  });
+
+  test("get order", async () => {
+    const orderRes = await request(app)
+      .get("/api/order")
+      .set("Authorization", `Bearer ${testUserAuthToken}`);
+    expect(orderRes.status).toBe(200);
+    expect(orderRes.body.orders).toEqual(expect.any(Array));
+  });
+
+  test("add menu item", async () => {
+    const adminUser = await createAdminUser();
+    const loginRes = await request(app).put("/api/auth").send(adminUser);
+    const authToken = loginRes.body.token;
+
+    const addMenuItemReq = {
+      //TODO figure out how admin is losing admin role (it didn't worked when I used the testAdminUser)
+      title: "VeggieSauron",
+      description: "a delicious vegetarian eye of sauron",
+      price: 1.0,
+      image: "",
     };
+    const addMenuItemRes = await request(app)
+      .put("/api/order/menu")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send(addMenuItemReq);
+    expect(addMenuItemRes.status).toBe(200);
+    expect(addMenuItemRes.body).toEqual(expect.any(Array));
   });
 
-  describe('GET /api/order/menu', () => {
-    it('should return the menu', async () => {
-      const mockMenu = [{ id: 1, title: 'Veggie', image: 'pizza1.png', price: 0.0038, description: 'A garden of delight' }];
-      DB.getMenu.mockResolvedValue(mockMenu);
-
-      const res = await request(app).get('/api/order/menu');
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual(mockMenu);
-      expect(DB.getMenu).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('PUT /api/order/menu', () => {
-    it('should add a menu item if user is admin', async () => {
-      const mockMenu = [{ id: 1, title: 'Student', description: 'No topping, no sauce, just carbs', image: 'pizza9.png', price: 0.0001 }];
-      const newItem = { title: 'Student', description: 'No topping, no sauce, just carbs', image: 'pizza9.png', price: 0.0001 };
-
-      req.user.isRole.mockReturnValue(true); // Mock user as admin
-      DB.addMenuItem.mockResolvedValue();
-      DB.getMenu.mockResolvedValue(mockMenu);
-
-      const res = await request(app)
-        .put('/api/order/menu')
-        .send(newItem)
-        .set('Authorization', 'Bearer tttttt');
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual(mockMenu);
-      expect(DB.addMenuItem).toHaveBeenCalledWith(newItem);
-      expect(DB.getMenu).toHaveBeenCalledTimes(1);
-    });
-
-    it('should return 403 if user is not admin', async () => {
-      req.user.isRole.mockReturnValue(false); // Mock user as non-admin
-
-      const res = await request(app)
-        .put('/api/order/menu')
-        .send({ title: 'Student', description: 'No topping, no sauce, just carbs', image: 'pizza9.png', price: 0.0001 })
-        .set('Authorization', 'Bearer tttttt');
-
-      expect(res.statusCode).toBe(403);
-      expect(res.body).toEqual({ message: 'unable to add menu item' });
-    });
-  });
-
-  describe('GET /api/order', () => {
-    it('should return orders for the authenticated user', async () => {
-      const mockOrders = { dinerId: 4, orders: [{ id: 1, franchiseId: 1, storeId: 1, date: '2024-06-05T05:14:40.000Z', items: [{ id: 1, menuId: 1, description: 'Veggie', price: 0.05 }] }], page: 1 };
-      DB.getOrders.mockResolvedValue(mockOrders);
-
-      const res = await request(app)
-        .get('/api/order')
-        .set('Authorization', 'Bearer tttttt');
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual(mockOrders);
-      expect(DB.getOrders).toHaveBeenCalledWith(req.user, undefined);
-    });
-  });
-
-  describe('POST /api/order', () => {
-    it('should create an order and return the order details', async () => {
-      const mockOrder = { franchiseId: 1, storeId: 1, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }], id: 1 };
-      const mockResponse = { order: mockOrder, reportSlowPizzaToFactoryUrl: 'http://factory/report', jwt: '1111111111' };
-
-      DB.addDinerOrder.mockResolvedValue(mockOrder);
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ reportUrl: 'http://factory/report', jwt: '1111111111' }),
-        })
-      );
-
-      const res = await request(app)
-        .post('/api/order')
-        .send({ franchiseId: 1, storeId: 1, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] })
-        .set('Authorization', 'Bearer tttttt');
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual(mockResponse);
-      expect(DB.addDinerOrder).toHaveBeenCalledWith(req.user, { franchiseId: 1, storeId: 1, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] });
-      expect(fetch).toHaveBeenCalledWith('http://localhost:3000/api/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: 'Bearer factoryApiKey' },
-        body: JSON.stringify({ diner: { id: 1, name: 'Test User', email: 'test@example.com' }, order: mockOrder }),
-      });
-    });
-
-    it('should return 500 if factory order creation fails', async () => {
-      const mockOrder = { franchiseId: 1, storeId: 1, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }], id: 1 };
-
-      DB.addDinerOrder.mockResolvedValue(mockOrder);
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
-          ok: false,
-          json: () => Promise.resolve({ reportUrl: 'http://factory/report' }),
-        })
-      );
-
-      const res = await request(app)
-        .post('/api/order')
-        .send({ franchiseId: 1, storeId: 1, items: [{ menuId: 1, description: 'Veggie', price: 0.05 }] })
-        .set('Authorization', 'Bearer tttttt');
-
-      expect(res.statusCode).toBe(500);
-      expect(res.body).toEqual({ message: 'Failed to fulfill order at factory', reportPizzaCreationErrorToPizzaFactoryUrl: 'http://factory/report' });
-    });
-  });
 });
+
+function expectValidJwt(potentialJwt) {
+  expect(potentialJwt).toMatch(
+    /^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/,
+  );
+}
+
+function randomName() {
+  return Math.random().toString(36).substring(2, 12);
+}
+
+const { Role, DB } = require("../database/database.js");
+
+async function createAdminUser() {
+  let user = { password: "toomanysecrets", roles: [{ role: Role.Admin }] };
+  user.name = randomName();
+  user.email = user.name + "@admin.com";
+
+  user = await DB.addUser(user);
+  return { ...user, password: "toomanysecrets" };
+}

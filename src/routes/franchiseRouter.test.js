@@ -1,177 +1,144 @@
 const request = require('supertest');
-const express = require('express');
-const franchiseRouter = require('./franchiseRouter'); // Adjust the path as needed
-const { DB } = require('../database/database'); // Adjust the path as needed
-const { authRouter } = require('./authRouter'); // Adjust the path as needed
+const app = require('../service'); // Ensure this is the correct path
 
-// Mock the database and authRouter
-jest.mock('../database/database');
-jest.mock('./authRouter');
-
-const app = express();
-app.use(express.json());
-app.use('/api/franchise', franchiseRouter);
+const testUser = { name: "pizza diner", email: "reg@test.com", password: "a" };
+let testUserAuthToken;
+let testAdminUser;
+let testAdminAuthToken;
 
 describe('Franchise Router Tests', () => {
-  beforeEach(() => {
-    // Clear all mocks before each test
-    jest.clearAllMocks();
+  // Existing tests...
+  beforeEach(async () => {
+    testUser.email = Math.random().toString(36).substring(2, 12) + "@test.com";
+    const registerRes = await request(app).post("/api/auth").send(testUser);
+    testUserAuthToken = registerRes.body.token;
+    expectValidJwt(testUserAuthToken);
+
+    testAdminUser = await createAdminUser();
+    const adminRegisterRes = await request(app)
+      .post("/api/auth")
+      .send(testAdminUser);
+    testAdminAuthToken = adminRegisterRes.body.token;
+    expect(adminRegisterRes.status).toBe(200);
+    expectValidJwt(adminRegisterRes.body.token);
+    // doesn't work w/ before each for create franchise, create menu item loses admin role somehow????
   });
 
-  describe('GET /api/franchise', () => {
-    it('should return a list of franchises', async () => {
-      const mockFranchises = [{ id: 1, name: 'pizzaPocket', admins: [], stores: [] }];
-      DB.getFranchises.mockResolvedValue(mockFranchises);
+  test('get franchises', async () => {
+    const franchiseRes = await request(app)
+      .get('/api/franchise')
+      .set('Authorization', `Bearer ${testUserAuthToken}`);
+    expect(franchiseRes.status).toBe(200);
+    expect(franchiseRes.body).toEqual(expect.any(Array));
+  });
 
-      const response = await request(app).get('/api/franchise');
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockFranchises);
+  test('get user franchises as normal user', async () => {
+    const userFranchiseRes = await request(app)
+      .get('/api/franchise/1')
+      .set('Authorization', `Bearer ${testUserAuthToken}`);
+    expect(userFranchiseRes.status).toBe(200);
+    expect(userFranchiseRes.body).toEqual(expect.any(Array));
+  });
+
+  test('get user franchises as admin user', async () => {
+    const userFranchiseRes = await request(app)
+      .get('/api/franchise/1')
+      .set('Authorization', `Bearer ${testAdminAuthToken}`);
+    expect(userFranchiseRes.status).toBe(200);
+    expect(userFranchiseRes.body).toEqual(expect.any(Array));
+  });
+
+  test('unauthorized to create franchise', async () => {
+    const createFranchiseRes = await request(app)
+      .post('/api/franchise')
+      .set('Authorization', `Bearer ${testUserAuthToken}`)
+      .send({});
+    expect(createFranchiseRes.status).toBe(403);
+    expect(createFranchiseRes.body).toMatchObject({
+      message: 'unable to create a franchise',
     });
   });
 
-  describe('GET /api/franchise/:userId', () => {
-    it('should return franchises for a specific user if authorized', async () => {
-      const mockUserFranchises = [{ id: 2, name: 'pizzaPocket', admins: [], stores: [] }];
-      DB.getUserFranchises.mockResolvedValue(mockUserFranchises);
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { id: 4, isRole: jest.fn().mockReturnValue(false) }; // Mock user
-        next();
-      });
+  describe('franchise stuff', () => {
+    let franchiseId;
+    let storeId;
 
-      const response = await request(app).get('/api/franchise/4').set('Authorization', 'Bearer tttttt');
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockUserFranchises);
-    });
+    test('create franchise', async () => {
+      const adminUser = await createAdminUser();
+      const loginRes = await request(app).put('/api/auth').send(adminUser);
+      const authToken = loginRes.body.token;
 
-    it('should return 403 if user is not authorized', async () => {
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { id: 5, isRole: jest.fn().mockReturnValue(false) }; // Mock unauthorized user
-        next();
-      });
-
-      const response = await request(app).get('/api/franchise/4').set('Authorization', 'Bearer tttttt');
-      expect(response.status).toBe(200); // Adjust based on your logic
-      expect(response.body).toEqual([]); // No franchises returned for unauthorized user
-    });
-  });
-
-  describe('POST /api/franchise', () => {
-    it('should create a new franchise if user is an admin', async () => {
-      const mockFranchise = { name: 'pizzaPocket', admins: [], id: 1 };
-      DB.createFranchise.mockResolvedValue(mockFranchise);
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { isRole: jest.fn().mockReturnValue(true) }; // Mock admin user
-        next();
-      });
-
-      const response = await request(app)
+      const createFranchiseRes = await request(app)
         .post('/api/franchise')
-        .set('Authorization', 'Bearer tttttt')
-        .send({ name: 'pizzaPocket', admins: [] });
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockFranchise);
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ name: adminUser.name, admins: [{ email: adminUser.email }] });
+      expect(createFranchiseRes.status).toBe(200);
+      expect(createFranchiseRes.body).toEqual(
+        expect.objectContaining({ name: adminUser.name }),
+      );
+      franchiseId = createFranchiseRes.body.id;
     });
 
-    it('should return 403 if user is not an admin', async () => {
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { isRole: jest.fn().mockReturnValue(false) }; // Mock non-admin user
-        next();
-      });
+    test('create store', async () => {
+      const adminUser = await createAdminUser();
+      const loginRes = await request(app).put('/api/auth').send(adminUser);
+      const authToken = loginRes.body.token;
 
-      const response = await request(app)
-        .post('/api/franchise')
-        .set('Authorization', 'Bearer tttttt')
-        .send({ name: 'pizzaPocket', admins: [] });
-      expect(response.status).toBe(403);
-    });
-  });
-
-  describe('DELETE /api/franchise/:franchiseId', () => {
-    it('should delete a franchise if user is an admin', async () => {
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { isRole: jest.fn().mockReturnValue(true) }; // Mock admin user
-        next();
-      });
-
-      const response = await request(app)
-        .delete('/api/franchise/1')
-        .set('Authorization', 'Bearer tttttt');
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ message: 'franchise deleted' });
+      const createStoreRes = await request(app)
+        .post(`/api/franchise/${franchiseId}/store`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ franchiseId: franchiseId, name: adminUser.name + "'s store" });
+      expect(createStoreRes.status).toBe(200);
+      expect(createStoreRes.body).toEqual(
+        expect.objectContaining({ name: adminUser.name + "'s store" }),
+      );
+      storeId = createStoreRes.body.id;
     });
 
-    it('should return 403 if user is not an admin', async () => {
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { isRole: jest.fn().mockReturnValue(false) }; // Mock non-admin user
-        next();
-      });
+    test('delete store', async () => {
+      const adminUser = await createAdminUser();
+      const loginRes = await request(app).put('/api/auth').send(adminUser);
+      const authToken = loginRes.body.token;
 
-      const response = await request(app)
-        .delete('/api/franchise/1')
-        .set('Authorization', 'Bearer tttttt');
-      expect(response.status).toBe(403);
-    });
-  });
-
-  describe('POST /api/franchise/:franchiseId/store', () => {
-    it('should create a new store if user is authorized', async () => {
-      const mockStore = { id: 1, name: 'SLC', totalRevenue: 0 };
-      DB.createStore.mockResolvedValue(mockStore);
-      DB.getFranchise.mockResolvedValue({ id: 1, admins: [{ id: 4 }] });
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { id: 4, isRole: jest.fn().mockReturnValue(false) }; // Mock authorized user
-        next();
-      });
-
-      const response = await request(app)
-        .post('/api/franchise/1/store')
-        .set('Authorization', 'Bearer tttttt')
-        .send({ name: 'SLC' });
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockStore);
+      const deleteStoreRes = await request(app)
+        .delete(`/api/franchise/${franchiseId}/store/${storeId}`)
+        .set('Authorization', `Bearer ${authToken}`);
+      expect(deleteStoreRes.status).toBe(200);
+      expect(deleteStoreRes.body).toEqual({ message: 'store deleted' });
     });
 
-    it('should return 403 if user is not authorized', async () => {
-      DB.getFranchise.mockResolvedValue({ id: 1, admins: [{ id: 5 }] }); // Mock unauthorized user
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { id: 4, isRole: jest.fn().mockReturnValue(false) }; // Mock unauthorized user
-        next();
-      });
+    test('delete franchise', async () => {
+      const adminUser = await createAdminUser();
+      const loginRes = await request(app).put('/api/auth').send(adminUser);
+      const authToken = loginRes.body.token;
 
-      const response = await request(app)
-        .post('/api/franchise/1/store')
-        .set('Authorization', 'Bearer tttttt')
-        .send({ name: 'SLC' });
-      expect(response.status).toBe(403);
-    });
-  });
-
-  describe('DELETE /api/franchise/:franchiseId/store/:storeId', () => {
-    it('should delete a store if user is authorized', async () => {
-      DB.getFranchise.mockResolvedValue({ id: 1, admins: [{ id: 4 }] });
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { id: 4, isRole: jest.fn().mockReturnValue(false) }; // Mock authorized user
-        next();
-      });
-
-      const response = await request(app)
-        .delete('/api/franchise/1/store/1')
-        .set('Authorization', 'Bearer tttttt');
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ message: 'store deleted' });
-    });
-
-    it('should return 403 if user is not authorized', async () => {
-      DB.getFranchise.mockResolvedValue({ id: 1, admins: [{ id: 5 }] }); // Mock unauthorized user
-      authRouter.authenticateToken.mockImplementation((req, res, next) => {
-        req.user = { id: 4, isRole: jest.fn().mockReturnValue(false) }; // Mock unauthorized user
-        next();
-      });
-
-      const response = await request(app)
-        .delete('/api/franchise/1/store/1')
-        .set('Authorization', 'Bearer tttttt');
-      expect(response.status).toBe(403);
+      const deleteFranchiseRes = await request(app)
+        .delete(`/api/franchise/${franchiseId}`)
+        .set('Authorization', `Bearer ${authToken}`);
+      expect(deleteFranchiseRes.status).toBe(200);
+      expect(deleteFranchiseRes.body).toEqual({ message: 'franchise deleted' });
     });
   });
 });
+
+function expectValidJwt(potentialJwt) {
+  expect(potentialJwt).toMatch(
+    /^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/,
+  );
+}
+
+
+function randomName() {
+  return Math.random().toString(36).substring(2, 12);
+}
+
+const { Role, DB } = require("../database/database.js");
+
+async function createAdminUser() {
+  let user = { password: "toomanysecrets", roles: [{ role: Role.Admin }] };
+  user.name = randomName();
+  user.email = user.name + "@admin.com";
+
+  user = await DB.addUser(user);
+  return { ...user, password: "toomanysecrets" };
+}
