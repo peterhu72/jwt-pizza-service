@@ -1,0 +1,10 @@
+{
+  "testEnvironment": "node",
+  "collectCoverage": true,
+  "coverageReporters": ["json", "json-summary", "text", "lcov"],
+  "coverageDirectory": "coverage",
+  "transform": {},
+  "moduleFileExtensions": ["js", "json", "node"],
+  "testMatch": ["**/__tests__/**/*.[jt]s?(x)", "**/?(*.)+(spec|test).[tj]s?(x)"],
+  "type": "commonjs"
+}
