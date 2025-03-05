@@ -1,10 +1,10 @@
 module.exports = {
-  jwtSecret: '${{ secrets.JWT_SECRET }}',
+  jwtSecret: 'qwerty',
   db: {
     connection: {
       host: '127.0.0.1',
       user: 'root',
-      password: 'NewPassword',
+      password: 'tempdbpassword',
       database: 'pizza',
       connectTimeout: 60000,
     },
@@ -12,6 +12,6 @@ module.exports = {
   },
   factory: {
     url: 'https://pizza-factory.cs329.click',
-    apiKey: '${{ secrets.FACTORY_API_KEY }}',
+    apiKey: '2a46eda965f248dda4a5e5c6688ffebe',
   },
 };
