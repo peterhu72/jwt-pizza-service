@@ -22,7 +22,6 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/order', orderRouter);
 apiRouter.use('/franchise', franchiseRouter);
 
-
 apiRouter.use('/docs', (req, res) => {
   res.json({
     version: version.version,
