@@ -63,3 +63,4 @@ const tableCreateStatements = [
 ];
 
 module.exports = { tableCreateStatements };
+
