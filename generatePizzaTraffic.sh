@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#host="https://pizza-service.maxiparis.com"
-host="http://localhost:3000"
+host="https://pizza-service.peterhu72.com"
+#host="http://localhost:3000"
 
 # Define color codes
 RED='\033[0;31m'
