@@ -1,6 +1,6 @@
 #!/bin/bash
 
-host="https://pizza-service.peterhu72.com"
+host="https://pizza-service.peterhu72.click"
 #host="http://localhost:3000"
 
 # Define color codes
