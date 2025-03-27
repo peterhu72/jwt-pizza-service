@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#host="https://pizza-service.peterhu72.click"
-host="http://localhost:3000"
+host="https://pizza-service.peterhu72.click"
+#host="http://localhost:3000"
 
 
 

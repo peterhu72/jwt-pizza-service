@@ -5,6 +5,7 @@ const { authRouter } = require('./authRouter.js');
 const { asyncHandler, StatusCodeError } = require('../endpointHelper.js');
 const Logger = require('pizza-logger');
 const logger = new Logger(config);
+const metrics = require('../metrics.js');
 
 const orderRouter = express.Router();
 
@@ -78,6 +79,7 @@ orderRouter.get(
 orderRouter.post(
   '/',
   authRouter.authenticateToken,
+  metrics.pizzaLatencyMiddleware,
   asyncHandler(async (req, res) => {
     const orderReq = req.body;
     const order = await DB.addDinerOrder(req.user, orderReq);
@@ -91,6 +93,7 @@ orderRouter.post(
     const j = await r.json();
     if (r.ok) {
       res.send({ order, reportSlowPizzaToFactoryUrl: j.reportUrl, jwt: j.jwt });
+      metrics.addRevenue(order.items.reduce((sum, item) => sum + item.price, 0));
     } else {
       res.status(500).send({ message: 'Failed to fulfill order at factory', reportPizzaCreationErrorToPizzaFactoryUrl: j.reportUrl });
     }
