@@ -273,7 +273,7 @@ async function sendMetricsToGrafana() {
   }
 }
 
-setInterval(async () => await sendMetricsToGrafana(), 10000);
+setInterval(async () => await sendMetricsToGrafana(), 60000);
 
 module.exports = {
   requestTracker,
