@@ -81,16 +81,19 @@ class DB {
     const connection = await this.getConnection();
     try {
       const params = [];
+      const param_values = [];
       if (password) {
         const hashedPassword = await bcrypt.hash(password, 10);
-        params.push(`password='${hashedPassword}'`);
+        params.push('password=?');
+        param_values.push(hashedPassword);
       }
       if (email) {
-        params.push(`email='${email}'`);
+        params.push('email=?');
+        param_values.push(email);
       }
       if (params.length > 0) {
-        const query = `UPDATE user SET ${params.join(', ')} WHERE id=${userId}`;
-        await this.query(connection, query);
+        param_values.push(userId);
+        await this.query(connection, `UPDATE user SET ${params.join(', ')} WHERE id=?`, param_values);
       }
       return this.getUser(email, password);
     } finally {
