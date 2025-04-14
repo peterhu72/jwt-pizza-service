@@ -82,7 +82,8 @@ orderRouter.post(
   metrics.pizzaLatencyMiddleware,
   asyncHandler(async (req, res) => {
     const orderReq = req.body;
-    if (DB.getMenu().find((item) => item.id === orderReq.items[0].menuId).price !== orderReq.items[0].price){
+    let p = await DB.getMenu();
+    if (p.find((item) => item.id === orderReq.items[0].menuId).price !== orderReq.items[0].price){
       throw new StatusCodeError('price doesnt match', 400);
     }
     const order = await DB.addDinerOrder(req.user, orderReq);
